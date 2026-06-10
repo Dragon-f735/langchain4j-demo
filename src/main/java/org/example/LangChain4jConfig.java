@@ -1,5 +1,9 @@
 package org.example;
 
+import com.sun.org.apache.regexp.internal.RE;
+import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.memory.chat.ChatMemoryProvider;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -50,14 +54,40 @@ public class LangChain4jConfig {
      * 这样你在业务代码里就能直接 @Autowired QAQueryAgent 了
      */
     @Bean
-    public QAQueryAgent qaQueryAgent(ChatLanguageModel chatLanguageModel, StreamingChatLanguageModel streamingChatLanguageModel) {
+    public QAQueryAgent qaQueryAgent(ChatLanguageModel chatLanguageModel,
+                                     StreamingChatLanguageModel streamingChatLanguageModel,
+                                     ChatMemory chatMemory,
+                                     ChatMemoryProvider chatMemoryProvider) {
         return AiServices.builder(QAQueryAgent.class)
                 .chatLanguageModel(chatLanguageModel)
                 .streamingChatLanguageModel(streamingChatLanguageModel)
+                //.chatMemory(chatMemory)
+                .chatMemoryProvider(chatMemoryProvider)
                 // 后续如果你加了别的组的知识库工具，或者你自己的向量库，直接在下面 .tools() 即可
                 // .contentRetriever(yourContentRetriever)
                 .build();
     }
 
+    @Bean
+    public ChatMemory chatMemory() {
+
+        return MessageWindowChatMemory.builder()
+                .maxMessages(20)
+                .build();
+    }
+
+    @Bean
+    public ChatMemoryProvider chatMemoryProvider() {
+
+        return new ChatMemoryProvider() {
+            @Override
+            public ChatMemory get(Object o) {
+                return MessageWindowChatMemory.builder()
+                        .id(o)
+                        .maxMessages(20)
+                        .build();
+            }
+        };
+    }
 
 }

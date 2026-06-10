@@ -1,5 +1,6 @@
 package org.example;
 
+import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,10 +17,10 @@ public class AiController {
     private QAQueryAgent qaQueryAgent; // 直接注入你刚刚手动声明的 Bean
 
     @GetMapping(value = "/ask", produces = "text/html;charset=utf-8")
-    public Flux<String> ask(@RequestParam("msg") String msg) {
+    public Flux<String> ask(@RequestParam("msg") String msg, @RequestParam("memoryId") String memoryId) {
         // 直接调用，动态代理会自动去调 Ollama 的 generate
         // 调用智能体拿到 TokenStream
-        TokenStream tokenStream = qaQueryAgent.chat(msg);
+        TokenStream tokenStream = qaQueryAgent.chat(msg, memoryId);
 
         // 💡 重点 2：利用 Flux.create，把 TokenStream 的回调揉进 WebFlux 的响应式管道里
         return Flux.create(fluxSink -> {
