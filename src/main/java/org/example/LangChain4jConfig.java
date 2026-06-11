@@ -9,6 +9,7 @@ import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.service.AiServices;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,6 +17,9 @@ import java.time.Duration;
 
 @Configuration
 public class LangChain4jConfig {
+
+    @Autowired
+    private RedisCharMemoryStore redisCharMemoryStore;
 
     /**
      * 1. 手动创建大模型底层驱动 Bean
@@ -85,6 +89,7 @@ public class LangChain4jConfig {
                 return MessageWindowChatMemory.builder()
                         .id(o)
                         .maxMessages(20)
+                        .chatMemoryStore(redisCharMemoryStore)
                         .build();
             }
         };

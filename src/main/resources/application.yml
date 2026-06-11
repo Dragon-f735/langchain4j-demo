@@ -5,3 +5,8 @@ server:
 logging:
   level:
     dev.langchain4j: info
+
+spring:
+  redis:
+    host: localhost
+    port: 6379
