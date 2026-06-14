@@ -169,7 +169,7 @@ public class LangChain4jConfig {
 
        return EmbeddingStoreContentRetriever.builder()
                 .embeddingStore(embeddingStore)
-               .embeddingModel(embeddingModel)
+                .embeddingModel(embeddingModel)
                 .minScore(0.5)
                 .maxResults(3)
                 .build();

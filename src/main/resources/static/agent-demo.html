@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangGraph Agent 演示 - 实时思考过程</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #1a73e8; margin-bottom: 20px; font-size: 24px; }
+        .input-area { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        textarea { width: 100%; min-height: 80px; border: 1px solid #ddd; border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical; }
+        .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+        input[type="text"] { flex: 1; min-width: 180px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+        button { padding: 10px 24px; border: none; border-radius: 8px; background: #1a73e8; color: white; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        button:hover { background: #1557b0; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-secondary { background: #5f6368; }
+        .btn-secondary:hover { background: #494c50; }
+        .stream-area { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-height: 300px; }
+        .thought-item { border-left: 3px solid #1a73e8; padding: 12px; margin-bottom: 12px; background: #f8f9fa; border-radius: 0 8px 8px 0; animation: fadeIn 0.3s; }
+        .thought-item.final { border-left-color: #34a853; background: #e6f4ea; }
+        .thought-item.tools { border-left-color: #fbbc04; background: #fef7e0; }
+        .thought-item.retrieve { border-left-color: #4285f4; background: #e8f0fe; }
+        .thought-item.error { border-left-color: #d93025; background: #fce8e6; }
+        .thought-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: #666; }
+        .node-name { font-weight: bold; color: #1a73e8; }
+        .node-name.final { color: #34a853; }
+        .node-name.tools { color: #fbbc04; }
+        .node-name.retrieve { color: #4285f4; }
+        .action { color: #333; font-weight: 500; margin-left: 8px; }
+        .content { color: #555; line-height: 1.6; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+        .loading { display: inline-block; width: 16px; height: 16px; border: 3px solid #f3f3f3; border-top: 3px solid #1a73e8; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        .stats { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; color: #666; font-size: 13px; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+        .tag-new { background: #e8f0fe; color: #1a73e8; }
+        .answer-only { background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; padding: 16px; margin-top: 16px; }
+        .answer-only h3 { color: #f57f17; margin-bottom: 8px; font-size: 14px; }
+        .answer-only .content { font-size: 14px; color: #333; }
+        .debug-info { background: #f1f3f4; border-radius: 8px; padding: 12px; margin-top: 12px; font-family: monospace; font-size: 12px; color: #5f6368; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 LangGraph Agent 演示</h1>
+
+        <div class="input-area">
+            <textarea id="userInput" placeholder="输入你的问题，Agent 会展示完整的思考过程...">你好，请介绍一下自己</textarea>
+            <div class="controls">
+                <input type="text" id="memoryId" placeholder="会话 ID（可选）" value="demo-user-1">
+                <button id="sendBtn" onclick="startChat(true)">🔍 查看思考过程</button>
+                <button id="sendBtn2" class="btn-secondary" onclick="startChat(false)">� 只看回复</button>
+                <button onclick="clearAll()">🗑️ 清空</button>
+            </div>
+        </div>
+
+        <div class="stream-area" id="streamArea">
+            <div style="color: #999; text-align: center; padding: 40px;">
+                👆 点击上方按钮开始对话
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getApiBase() {
+            const host = window.location.hostname || 'localhost';
+            return 'http://localhost:8082';
+        }
+
+        async function startChat(showThoughts) {
+            const msg = document.getElementById('userInput').value.trim();
+            const memoryId = document.getElementById('memoryId').value.trim();
+            if (!msg) return;
+
+            clearAll();
+            const area = document.getElementById('streamArea');
+
+            const loadingDiv = document.createElement('div');
+            loadingDiv.innerHTML = '<span class="loading"></span>Agent 正在思考，请稍候...';
+            loadingDiv.style.textAlign = 'center';
+            loadingDiv.style.padding = '20px';
+            loadingDiv.style.color = '#666';
+            area.appendChild(loadingDiv);
+
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('sendBtn2').disabled = true;
+
+            try {
+                const apiBase = getApiBase();
+                const endpoint = showThoughts ? '/graph/thoughts' : '/graph/answer';
+                const url = `${apiBase}${endpoint}?msg=${encodeURIComponent(msg)}&memoryId=${encodeURIComponent(memoryId)}`;
+
+                console.log('Requesting:', url);
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json, text/plain, */*' }
+                });
+
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errText.substring(0, 200)}`);
+                }
+
+                loadingDiv.remove();
+
+                const contentType = response.headers.get('content-type') || '';
+                
+                if (contentType.includes('application/json')) {
+                    const thoughts = await response.json();
+                    console.log('Thoughts:', thoughts);
+                    
+                    if (Array.isArray(thoughts)) {
+                        if (thoughts.length === 0) {
+                            showError('没有获取到思考过程');
+                            return;
+                        }
+                        thoughts.forEach((t, idx) => renderThought(t, idx));
+                       
+                        const statsDiv = document.createElement('div');
+                        statsDiv.className = 'stats';
+                        statsDiv.innerHTML = `✅ 完成 | 共 ${thoughts.length} 步 | 最后一步耗时 ${thoughts[thoughts.length - 1]?.durationMs ?? '-'} ms`;
+                        area.appendChild(statsDiv);
+                    } else {
+                        showError('返回数据格式不正确: ' + JSON.stringify(thoughts).substring(0, 100));
+                    }
+                } else {
+                    const text = await response.text();
+                    const answerDiv = document.createElement('div');
+                    answerDiv.className = 'answer-only';
+                    answerDiv.innerHTML = `<h3>🤖 Agent 回复</h3><div class="content">${escapeHtml(text)}</div>`;
+                    area.appendChild(answerDiv);
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                loadingDiv.remove();
+                showError('请求失败: ' + err.message + '<br><br>请确保 Spring Boot 服务已启动在端口 8082');
+            } finally {
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('sendBtn2').disabled = false;
+            }
+        }
+
+        function showError(msg) {
+            const area = document.getElementById('streamArea');
+            const div = document.createElement('div');
+            div.className = 'thought-item error';
+            div.innerHTML = `<div class="thought-header"><span class="node-name">❌ 错误</span></div><div class="content">${msg}</div>`;
+            area.appendChild(div);
+        }
+
+        function renderThought(t, idx) {
+            const area = document.getElementById('streamArea');
+            const div = document.createElement('div');
+            div.className = `thought-item ${t.node || ''}`;
+            if (t.finalAnswer) div.classList.add('final');
+
+            const timeTag = t.durationMs != null && t.durationMs >= 0 ? `${t.durationMs}ms` : '-';
+            const nodeLabel = t.node ? t.node.toUpperCase() : 'UNKNOWN';
+            const actionLabel = t.action || '';
+            const contentText = t.content || '(无内容)';
+
+            div.innerHTML = `
+                <div class="thought-header">
+                    <span>
+                        <span class="node-name ${t.node || ''}">${idx + 1}. ${nodeLabel}</span>
+                        <span class="action">${escapeHtml(actionLabel)}</span>
+                    </span>
+                    <span>${timeTag}</span>
+                </div>
+                <div class="content">${escapeHtml(contentText)}</div>
+            `;
+            area.appendChild(div);
+        }
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            const div = document.createElement('div');
+            div.textContent = String(str);
+            return div.innerHTML;
+        }
+
+        function clearAll() {
+            const area = document.getElementById('streamArea');
+            area.innerHTML = '<div style="color: #999; text-align: center; padding: 40px;">👆 点击上方按钮开始对话</div>';
+        }
+
+        document.getElementById('userInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                startChat(true);
+            }
+        });
+
+        console.log('Agent Demo 页面已加载，API Base:', getApiBase());
+    </script>
+</body>
+</html>
